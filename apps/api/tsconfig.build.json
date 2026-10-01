@@ -1,0 +1,8 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "sourceMap": true
+  },
+  "include": ["src", "prisma/seed.ts", "prisma/seed-data.ts", "prisma/create-admin.ts"],
+  "exclude": ["tests", "**/*.test.ts"]
+}

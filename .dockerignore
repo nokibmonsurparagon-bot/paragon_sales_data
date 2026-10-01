@@ -1,0 +1,12 @@
+**/node_modules
+**/dist
+**/coverage
+**/*.log
+.local
+storage
+apps/api/storage
+.env
+.env.*
+!.env.example
+.git
+docs/openapi.json

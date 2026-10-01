@@ -1,0 +1,62 @@
+# Local / demo stack:  docker compose up --build   →  http://localhost:8080
+# Values come from .env (copy .env.example). Defaults below are for local use only.
+name: paragon
+
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-paragon}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-paragon_dev_password}
+      POSTGRES_DB: ${POSTGRES_DB:-paragon}
+      POSTGRES_INITDB_ARGS: --encoding=UTF8
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      # Host access for tooling only. 5433 so it can run next to the local dev database (npm run db:start, 5432).
+      - '127.0.0.1:5433:5432'
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER:-paragon}:${POSTGRES_PASSWORD:-paragon_dev_password}@db:5432/${POSTGRES_DB:-paragon}?schema=public
+      FILE_STORAGE_PATH: /app/storage
+      TRUST_PROXY: '1'
+      CORS_ORIGIN: http://localhost:8080
+      # Plain HTTP on localhost. Set COOKIE_SECURE=true behind HTTPS in any shared environment.
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      SWAGGER_ENABLED: ${SWAGGER_ENABLED:-true}
+      RUN_SEED: 'true'
+      # DEVELOPMENT ONLY: creates the demo users listed in README. Remove for real deployments.
+      SEED_DEV_USERS: ${SEED_DEV_USERS:-true}
+    volumes:
+      - storage:/app/storage
+    depends_on:
+      db:
+        condition: service_healthy
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    restart: unless-stopped
+    ports:
+      - '8080:8080'
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  storage:

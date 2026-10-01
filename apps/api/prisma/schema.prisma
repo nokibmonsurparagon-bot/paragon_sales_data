@@ -1,0 +1,693 @@
+// Paragon – Sales Transaction Management & Approval
+// Conventions: UUID primary keys, snake_case tables/columns, timestamptz in UTC.
+// Append-only tables (audit_logs, approval_records, workflow_actions, sales_transaction_history)
+// are protected by database triggers created in the init migration.
+
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "debian-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================================
+// Enums (mirrored in packages/shared/src/constants/domain.ts)
+// ============================================================================
+
+enum TransactionStatus {
+  DRAFT
+  SALES_ADMIN_REVIEW
+  FINANCE_REVIEW
+  CORRECTION_REQUIRED
+  REJECTED
+  READY_FOR_PROCESSING
+  CANCELLED
+}
+
+enum UserStatus {
+  ACTIVE
+  DISABLED
+}
+
+enum MasterStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum DuplicateStatus {
+  NO_DUPLICATE
+  POSSIBLE_DUPLICATE
+  EXACT_DUPLICATE
+}
+
+enum DuplicateResolution {
+  PENDING
+  NOT_DUPLICATE
+  CONFIRMED_DUPLICATE
+}
+
+enum CorrectionCategory {
+  ACCOUNT_ERROR
+  BANK_ERROR
+  PARTY_ERROR
+  AMOUNT_ERROR
+  DOCUMENT_ERROR
+  BUSINESS_RULE_ERROR
+  OTHER
+}
+
+enum ApprovalStage {
+  SALES_ADMIN
+  FINANCE
+}
+
+enum ApprovalDecision {
+  APPROVED
+  RETURNED
+  REJECTED
+}
+
+enum BusinessRuleType {
+  MIN_AMOUNT
+  MAX_AMOUNT
+  REQUIRED_FIELD
+  PARTY_RESTRICTION
+  ACCOUNT_RESTRICTION
+  APPROVAL_LEVEL
+}
+
+enum RuleTrigger {
+  SAVE
+  SUBMIT
+  APPROVE
+}
+
+enum RuleSeverity {
+  ERROR
+  WARNING
+}
+
+// ============================================================================
+// Identity & access
+// ============================================================================
+
+model User {
+  id                 String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email              String     @unique @db.VarChar(254) // stored lower-case
+  fullName           String     @map("full_name") @db.VarChar(150)
+  passwordHash       String     @map("password_hash")
+  status             UserStatus @default(ACTIVE)
+  mustChangePassword Boolean    @default(false) @map("must_change_password")
+  failedLoginCount   Int        @default(0) @map("failed_login_count")
+  lockedUntil        DateTime?  @map("locked_until") @db.Timestamptz(3)
+  lastLoginAt        DateTime?  @map("last_login_at") @db.Timestamptz(3)
+  /// Incremented on role/wing change / disable / password reset → invalidates access tokens.
+  tokenVersion       Int        @default(0) @map("token_version")
+  /// Access to every wing, including wings created later (central finance, administrators).
+  allWings           Boolean    @default(false) @map("all_wings")
+  createdAt          DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  roles         UserRole[]
+  wings         UserWing[]
+  refreshTokens RefreshToken[]
+  notifications Notification[]
+  auditLogs     AuditLog[]
+
+  createdTransactions    SalesTransaction[] @relation("TransactionCreatedBy")
+  updatedTransactions    SalesTransaction[] @relation("TransactionUpdatedBy")
+  fieldForceTransactions SalesTransaction[] @relation("TransactionFieldForce")
+  assignedTransactions   SalesTransaction[] @relation("TransactionAssignedUser")
+  resolvedDuplicates     SalesTransaction[] @relation("TransactionDuplicateResolvedBy")
+  historyEntries         SalesTransactionHistory[]
+  workflowActions        WorkflowAction[]
+  approvalRecords        ApprovalRecord[]
+  uploadedAttachments    SalesTransactionAttachment[] @relation("AttachmentUploadedBy")
+  deletedAttachments     SalesTransactionAttachment[] @relation("AttachmentDeletedBy")
+
+  @@index([status])
+  @@map("users")
+}
+
+model Role {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code        String   @unique @db.VarChar(50)
+  name        String   @db.VarChar(150)
+  description String?  @db.VarChar(500)
+  isSystem    Boolean  @default(false) @map("is_system")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  userRoles            UserRole[]
+  permissions          RolePermission[]
+  workflowRules        WorkflowRule[]
+  assignedTransactions SalesTransaction[] @relation("TransactionAssignedRole")
+
+  @@map("roles")
+}
+
+model Permission {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code        String   @unique @db.VarChar(80)
+  module      String   @db.VarChar(80)
+  description String   @db.VarChar(300)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  roles RolePermission[]
+
+  @@map("permissions")
+}
+
+model UserRole {
+  userId     String   @map("user_id") @db.Uuid
+  roleId     String   @map("role_id") @db.Uuid
+  assignedAt DateTime @default(now()) @map("assigned_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role Role @relation(fields: [roleId], references: [id], onDelete: Restrict)
+
+  @@id([userId, roleId])
+  @@index([roleId])
+  @@map("user_roles")
+}
+
+model RolePermission {
+  roleId       String @map("role_id") @db.Uuid
+  permissionId String @map("permission_id") @db.Uuid
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@index([permissionId])
+  @@map("role_permissions")
+}
+
+model RefreshToken {
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId       String    @map("user_id") @db.Uuid
+  /// HMAC-SHA256 of the opaque token; the raw token is never stored.
+  tokenHash    String    @unique @map("token_hash") @db.VarChar(128)
+  familyId     String    @map("family_id") @db.Uuid
+  expiresAt    DateTime  @map("expires_at") @db.Timestamptz(3)
+  revokedAt    DateTime? @map("revoked_at") @db.Timestamptz(3)
+  replacedById String?   @map("replaced_by_id") @db.Uuid
+  ipAddress    String?   @map("ip_address") @db.VarChar(64)
+  userAgent    String?   @map("user_agent") @db.VarChar(500)
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([familyId])
+  @@map("refresh_tokens")
+}
+
+// ============================================================================
+// Master data (never hard-deleted; INACTIVE hides from new entries)
+// ============================================================================
+
+/// Business wing (DOC, CBF, Fish, Feed, Milk, …). Every transaction belongs to one wing, and
+/// Sales Admin / finance reviewers only see and act on transactions of the wings they are assigned to.
+model Wing {
+  id        String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code      String       @unique @db.VarChar(30)
+  name      String       @db.VarChar(150)
+  status    MasterStatus @default(ACTIVE)
+  createdAt DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  users        UserWing[]
+  transactions SalesTransaction[]
+
+  @@index([status, name])
+  @@map("wings")
+}
+
+model UserWing {
+  userId     String   @map("user_id") @db.Uuid
+  wingId     String   @map("wing_id") @db.Uuid
+  assignedAt DateTime @default(now()) @map("assigned_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  wing Wing @relation(fields: [wingId], references: [id], onDelete: Restrict)
+
+  @@id([userId, wingId])
+  @@index([wingId])
+  @@map("user_wings")
+}
+
+/// Sales line (admin-managed dropdown on the transaction form).
+model Line {
+  id        String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code      String       @unique @db.VarChar(30)
+  name      String       @db.VarChar(150)
+  status    MasterStatus @default(ACTIVE)
+  createdAt DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  transactions SalesTransaction[]
+
+  @@index([status, name])
+  @@map("lines")
+}
+
+/// Branch (admin-managed dropdown on the transaction form).
+model Branch {
+  id        String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code      String       @unique @db.VarChar(30)
+  name      String       @db.VarChar(150)
+  status    MasterStatus @default(ACTIVE)
+  createdAt DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  transactions SalesTransaction[]
+
+  @@index([status, name])
+  @@map("branches")
+}
+
+/// CV code (admin-managed dropdown on the transaction form).
+model CvCode {
+  id        String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code      String       @unique @db.VarChar(30)
+  name      String       @db.VarChar(150)
+  status    MasterStatus @default(ACTIVE)
+  createdAt DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  transactions SalesTransaction[]
+
+  @@index([status, name])
+  @@index([name(ops: raw("gin_trgm_ops"))], type: Gin, map: "cv_codes_name_trgm_idx")
+  @@map("cv_codes")
+}
+
+model Bank {
+  id        String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code      String       @unique @db.VarChar(30)
+  name      String       @db.VarChar(150)
+  status    MasterStatus @default(ACTIVE)
+  createdAt DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  accounts     Account[]
+  transactions SalesTransaction[]
+
+  @@index([status, name])
+  @@map("banks")
+}
+
+model Account {
+  id        String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code      String       @unique @db.VarChar(30)
+  name      String       @db.VarChar(150)
+  bankId    String       @map("bank_id") @db.Uuid
+  status    MasterStatus @default(ACTIVE)
+  createdAt DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  bank         Bank               @relation(fields: [bankId], references: [id], onDelete: Restrict)
+  transactions SalesTransaction[]
+
+  @@index([bankId, status])
+  @@map("accounts")
+}
+
+/// Farmer / customer.
+model Party {
+  id        String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code      String       @unique @db.VarChar(30)
+  name      String       @db.VarChar(150)
+  status    MasterStatus @default(ACTIVE)
+  createdAt DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  transactions SalesTransaction[]
+
+  @@index([status, name])
+  @@index([name(ops: raw("gin_trgm_ops"))], type: Gin, map: "parties_name_trgm_idx")
+  @@map("parties")
+}
+
+model SalesType {
+  id        String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code      String       @unique @db.VarChar(30)
+  name      String       @db.VarChar(150)
+  /// Used by routing rules ("special transaction → Accountant").
+  isSpecial Boolean      @default(false) @map("is_special")
+  status    MasterStatus @default(ACTIVE)
+  createdAt DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  transactions SalesTransaction[]
+
+  @@index([status, name])
+  @@map("sales_types")
+}
+
+// ============================================================================
+// Sales transactions
+// ============================================================================
+
+model SalesTransaction {
+  id                   String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  transactionNumber    String            @unique @map("transaction_number") @db.VarChar(30)
+
+  /// Decides who can see and review the transaction – required from creation on.
+  wingId               String            @map("wing_id") @db.Uuid
+
+  // ---- business fields (nullable while DRAFT; completeness enforced on submit) ----
+  transactionDate      DateTime?         @map("transaction_date") @db.Date
+  fieldForceUserId     String            @map("field_force_user_id") @db.Uuid
+  lineId               String?           @map("line_id") @db.Uuid
+  branchId             String?           @map("branch_id") @db.Uuid
+  cvCodeId             String?           @map("cv_code_id") @db.Uuid
+  /// Farmer / customer.
+  partyId              String?           @map("party_id") @db.Uuid
+  /// Deposit amount.
+  amount               Decimal?          @db.Decimal(18, 2)
+  bankId               String?           @map("bank_id") @db.Uuid
+  accountId            String?           @map("account_id") @db.Uuid
+  /// Depositor's bank branch / bank details (free text).
+  bankDetails          String?           @map("bank_details") @db.VarChar(300)
+  paymentReference     String?           @map("payment_reference") @db.VarChar(100)
+  paymentReferenceNorm String?           @map("payment_reference_norm") @db.VarChar(100)
+  salesTypeId          String?           @map("sales_type_id") @db.Uuid
+  /// Narration.
+  remarks              String?
+  /// Amount (CR): what the bank credited – entered by Accountant / Treasury at final approval.
+  creditAmount         Decimal?          @map("credit_amount") @db.Decimal(18, 2)
+  /// Deposit amount − Amount (CR), stored with the credit amount.
+  bankCharge           Decimal?          @map("bank_charge") @db.Decimal(18, 2)
+  /// Extension point for future fields that do not (yet) warrant a column.
+  extraData            Json?             @map("extra_data")
+
+  // ---- workflow ----
+  status               TransactionStatus @default(DRAFT)
+  assignedRoleId       String?           @map("assigned_role_id") @db.Uuid
+  assignedUserId       String?           @map("assigned_user_id") @db.Uuid
+  workflowRuleId       String?           @map("workflow_rule_id") @db.Uuid
+  rejectionReason      String?           @map("rejection_reason") @db.VarChar(1000)
+  correctionCategory   CorrectionCategory? @map("correction_category")
+  latestComment        String?           @map("latest_comment") @db.VarChar(1000)
+  submittedAt          DateTime?         @map("submitted_at") @db.Timestamptz(3)
+  finalApprovedAt      DateTime?         @map("final_approved_at") @db.Timestamptz(3)
+  /// Frozen copy of the approved data for future downstream consumers.
+  approvedSnapshot     Json?             @map("approved_snapshot")
+
+  // ---- duplicate detection ----
+  duplicateStatus         DuplicateStatus      @default(NO_DUPLICATE) @map("duplicate_status")
+  duplicateOfId           String?              @map("duplicate_of_id") @db.Uuid
+  duplicateResolution     DuplicateResolution? @map("duplicate_resolution")
+  duplicateResolutionNote String?              @map("duplicate_resolution_note") @db.VarChar(1000)
+  duplicateResolvedById   String?              @map("duplicate_resolved_by_id") @db.Uuid
+  duplicateResolvedAt     DateTime?            @map("duplicate_resolved_at") @db.Timestamptz(3)
+
+  // ---- concurrency & ownership ----
+  version     Int      @default(1)
+  createdById String   @map("created_by_id") @db.Uuid
+  updatedById String?  @map("updated_by_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  wing               Wing          @relation(fields: [wingId], references: [id], onDelete: Restrict)
+  fieldForce         User          @relation("TransactionFieldForce", fields: [fieldForceUserId], references: [id], onDelete: Restrict)
+  line               Line?         @relation(fields: [lineId], references: [id], onDelete: Restrict)
+  branch             Branch?       @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  cvCode             CvCode?       @relation(fields: [cvCodeId], references: [id], onDelete: Restrict)
+  party              Party?        @relation(fields: [partyId], references: [id], onDelete: Restrict)
+  bank               Bank?         @relation(fields: [bankId], references: [id], onDelete: Restrict)
+  account            Account?      @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  salesType          SalesType?    @relation(fields: [salesTypeId], references: [id], onDelete: Restrict)
+  assignedRole       Role?         @relation("TransactionAssignedRole", fields: [assignedRoleId], references: [id], onDelete: Restrict)
+  assignedUser       User?         @relation("TransactionAssignedUser", fields: [assignedUserId], references: [id], onDelete: Restrict)
+  workflowRule       WorkflowRule? @relation(fields: [workflowRuleId], references: [id], onDelete: Restrict)
+  createdBy          User          @relation("TransactionCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  updatedBy          User?         @relation("TransactionUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict)
+  duplicateOf        SalesTransaction?  @relation("TransactionDuplicateOf", fields: [duplicateOfId], references: [id], onDelete: Restrict)
+  duplicates         SalesTransaction[] @relation("TransactionDuplicateOf")
+  duplicateResolvedBy User?        @relation("TransactionDuplicateResolvedBy", fields: [duplicateResolvedById], references: [id], onDelete: Restrict)
+
+  history         SalesTransactionHistory[]
+  attachments     SalesTransactionAttachment[]
+  workflow        WorkflowInstance?
+  approvalRecords ApprovalRecord[]
+
+  @@index([status])
+  @@index([wingId, status])
+  @@index([status, assignedRoleId])
+  @@index([assignedUserId])
+  @@index([createdById])
+  @@index([fieldForceUserId])
+  @@index([partyId])
+  @@index([lineId])
+  @@index([branchId])
+  @@index([cvCodeId])
+  @@index([transactionDate])
+  @@index([createdAt])
+  @@index([partyId, amount, transactionDate], map: "sales_transactions_duplicate_lookup_idx")
+  @@index([paymentReferenceNorm])
+  @@index([transactionNumber(ops: raw("gin_trgm_ops"))], type: Gin, map: "sales_transactions_number_trgm_idx")
+  @@index([paymentReference(ops: raw("gin_trgm_ops"))], type: Gin, map: "sales_transactions_payref_trgm_idx")
+  @@map("sales_transactions")
+}
+
+/// User-facing timeline. Insert-only (trigger).
+model SalesTransactionHistory {
+  id             String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  transactionId  String             @map("transaction_id") @db.Uuid
+  action         String             @db.VarChar(50)
+  previousStatus TransactionStatus? @map("previous_status")
+  newStatus      TransactionStatus? @map("new_status")
+  actorUserId    String             @map("actor_user_id") @db.Uuid
+  actorRole      String?            @map("actor_role") @db.VarChar(50)
+  comment        String?            @db.VarChar(1000)
+  /// Field-level diff: { field: { from, to } }
+  changes        Json?
+  createdAt      DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  transaction SalesTransaction @relation(fields: [transactionId], references: [id], onDelete: Restrict)
+  actor       User             @relation(fields: [actorUserId], references: [id], onDelete: Restrict)
+
+  @@index([transactionId, createdAt])
+  @@index([actorUserId, createdAt])
+  @@index([createdAt])
+  @@map("sales_transaction_history")
+}
+
+model SalesTransactionAttachment {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  transactionId   String    @map("transaction_id") @db.Uuid
+  storageProvider String    @map("storage_provider") @db.VarChar(30)
+  storageKey      String    @unique @map("storage_key") @db.VarChar(500)
+  originalName    String    @map("original_name") @db.VarChar(255)
+  mimeType        String    @map("mime_type") @db.VarChar(120)
+  sizeBytes       Int       @map("size_bytes")
+  sha256          String    @db.VarChar(64)
+  uploadedById    String    @map("uploaded_by_id") @db.Uuid
+  uploadedAt      DateTime  @default(now()) @map("uploaded_at") @db.Timestamptz(3)
+  /// Soft delete keeps the upload history.
+  deletedAt       DateTime? @map("deleted_at") @db.Timestamptz(3)
+  deletedById     String?   @map("deleted_by_id") @db.Uuid
+
+  transaction SalesTransaction @relation(fields: [transactionId], references: [id], onDelete: Restrict)
+  uploadedBy  User             @relation("AttachmentUploadedBy", fields: [uploadedById], references: [id], onDelete: Restrict)
+  deletedBy   User?            @relation("AttachmentDeletedBy", fields: [deletedById], references: [id], onDelete: Restrict)
+
+  @@index([transactionId, deletedAt])
+  @@map("sales_transaction_attachments")
+}
+
+/// Human-readable numbering counters, e.g. (SAL, 2026) → 123.
+model SequenceCounter {
+  name      String @db.VarChar(20)
+  year      Int
+  lastValue Int    @default(0) @map("last_value")
+
+  @@id([name, year])
+  @@map("sequence_counters")
+}
+
+// ============================================================================
+// Workflow
+// ============================================================================
+
+model WorkflowInstance {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  transactionId  String    @unique @map("transaction_id") @db.Uuid
+  definitionCode String    @map("definition_code") @db.VarChar(50)
+  /// Incremented on every resubmission after correction.
+  cycle          Int       @default(1)
+  startedAt      DateTime  @default(now()) @map("started_at") @db.Timestamptz(3)
+  completedAt    DateTime? @map("completed_at") @db.Timestamptz(3)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  transaction SalesTransaction @relation(fields: [transactionId], references: [id], onDelete: Restrict)
+  actions     WorkflowAction[]
+
+  @@map("workflow_instances")
+}
+
+/// State-machine transitions only. Insert-only (trigger).
+model WorkflowAction {
+  id            String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  instanceId    String            @map("instance_id") @db.Uuid
+  transactionId String            @map("transaction_id") @db.Uuid
+  action        String            @db.VarChar(30)
+  fromStatus    TransactionStatus @map("from_status")
+  toStatus      TransactionStatus @map("to_status")
+  actorUserId   String            @map("actor_user_id") @db.Uuid
+  actorRole     String?           @map("actor_role") @db.VarChar(50)
+  cycle         Int
+  comment       String?           @db.VarChar(1000)
+  createdAt     DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  instance WorkflowInstance @relation(fields: [instanceId], references: [id], onDelete: Restrict)
+  actor    User             @relation(fields: [actorUserId], references: [id], onDelete: Restrict)
+
+  @@index([instanceId, createdAt])
+  @@index([transactionId])
+  @@map("workflow_actions")
+}
+
+/// Sign-off decisions. Insert-only (trigger).
+model ApprovalRecord {
+  id                 String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  transactionId      String              @map("transaction_id") @db.Uuid
+  stage              ApprovalStage
+  decision           ApprovalDecision
+  approverId         String              @map("approver_id") @db.Uuid
+  approverRole       String              @map("approver_role") @db.VarChar(50)
+  reason             String?             @db.VarChar(1000)
+  correctionCategory CorrectionCategory? @map("correction_category")
+  cycle              Int
+  createdAt          DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  transaction SalesTransaction @relation(fields: [transactionId], references: [id], onDelete: Restrict)
+  approver    User             @relation(fields: [approverId], references: [id], onDelete: Restrict)
+
+  @@index([transactionId, cycle])
+  @@index([approverId, createdAt])
+  @@index([stage, decision, createdAt])
+  @@map("approval_records")
+}
+
+model WorkflowRule {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name          String    @db.VarChar(150)
+  description   String?   @db.VarChar(500)
+  /// Lower number wins.
+  priority      Int
+  /// { wingIds?, salesTypeIds?, partyIds?, minAmount?, maxAmount?, isSpecial? } – empty = catch-all
+  conditions    Json      @default("{}")
+  targetRoleId  String    @map("target_role_id") @db.Uuid
+  isActive      Boolean   @default(true) @map("is_active")
+  effectiveFrom DateTime? @map("effective_from") @db.Date
+  effectiveTo   DateTime? @map("effective_to") @db.Date
+  createdById   String?   @map("created_by_id") @db.Uuid
+  updatedById   String?   @map("updated_by_id") @db.Uuid
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  targetRole   Role               @relation(fields: [targetRoleId], references: [id], onDelete: Restrict)
+  transactions SalesTransaction[]
+
+  @@index([isActive, priority])
+  @@map("workflow_rules")
+}
+
+model BusinessRule {
+  id          String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name        String           @db.VarChar(150)
+  description String?          @db.VarChar(500)
+  type        BusinessRuleType
+  params      Json
+  trigger     RuleTrigger
+  severity    RuleSeverity     @default(ERROR)
+  isActive    Boolean          @default(true) @map("is_active")
+  createdAt   DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@index([isActive, trigger])
+  @@map("business_rules")
+}
+
+// ============================================================================
+// Cross-cutting
+// ============================================================================
+
+model Notification {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId     String    @map("user_id") @db.Uuid
+  type       String    @db.VarChar(50)
+  title      String    @db.VarChar(200)
+  message    String    @db.VarChar(1000)
+  entityType String?   @map("entity_type") @db.VarChar(50)
+  entityId   String?   @map("entity_id") @db.Uuid
+  isRead     Boolean   @default(false) @map("is_read")
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  readAt     DateTime? @map("read_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isRead, createdAt])
+  @@map("notifications")
+}
+
+/// Append-only (trigger). Never updated or deleted by the application.
+model AuditLog {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId       String?  @map("user_id") @db.Uuid
+  role         String?  @db.VarChar(200)
+  action       String   @db.VarChar(50)
+  entityType   String?  @map("entity_type") @db.VarChar(50)
+  entityId     String?  @map("entity_id") @db.VarChar(100)
+  previousData Json?    @map("previous_data")
+  newData      Json?    @map("new_data")
+  ipAddress    String?  @map("ip_address") @db.VarChar(64)
+  userAgent    String?  @map("user_agent") @db.VarChar(500)
+  requestId    String?  @map("request_id") @db.VarChar(100)
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  user User? @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@index([createdAt])
+  @@index([userId, createdAt])
+  @@index([entityType, entityId])
+  @@index([action, createdAt])
+  @@index([requestId])
+  @@map("audit_logs")
+}
+
+model SystemSetting {
+  key         String   @id @db.VarChar(100)
+  value       Json
+  description String?  @db.VarChar(500)
+  updatedById String?  @map("updated_by_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@map("system_settings")
+}
+
+/// Transactional outbox. Written in the same DB transaction as the state change;
+/// a future integration (ERP/RPA) consumes unpublished events. Nothing consumes it yet.
+model DomainEvent {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  eventType     String    @map("event_type") @db.VarChar(80)
+  aggregateType String    @map("aggregate_type") @db.VarChar(50)
+  aggregateId   String    @map("aggregate_id") @db.Uuid
+  payload       Json
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  publishedAt   DateTime? @map("published_at") @db.Timestamptz(3)
+
+  @@index([publishedAt, createdAt])
+  @@index([aggregateType, aggregateId])
+  @@map("domain_events")
+}

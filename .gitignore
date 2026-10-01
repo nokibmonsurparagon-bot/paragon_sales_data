@@ -1,0 +1,15 @@
+node_modules/
+dist/
+coverage/
+*.log
+.DS_Store
+
+# Secrets – never commit real environment files
+.env
+.env.*
+!.env.example
+
+# Local runtime data
+.local/
+storage/
+apps/api/storage/
