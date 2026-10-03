@@ -9,11 +9,11 @@ export const prisma = new PrismaClient({
 /** Either the root client or an interactive-transaction client. Repositories accept both. */
 export type Db = PrismaClient | Prisma.TransactionClient;
 
-export function withTransaction<T>(fn: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
+export function withTransaction<T>(fn: (tx: Prisma.TransactionClient) => Promise<T>, opts: { timeout?: number } = {}): Promise<T> {
   return prisma.$transaction(fn, {
     isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted,
     maxWait: 5_000,
-    timeout: 15_000,
+    timeout: opts.timeout ?? 15_000,
   });
 }
 

@@ -89,6 +89,21 @@ export interface MasterDataItem {
   isSpecial?: boolean;
 }
 
+export interface MasterImportResult {
+  /** Nothing is written when this is true, or when the file has errors. */
+  dryRun: boolean;
+  applied: boolean;
+  fileName: string;
+  totalRows: number;
+  created: number;
+  updated: number;
+  unchanged: number;
+  /** `row` = spreadsheet row number (1 = header row). */
+  errors: { row: number; column?: string; message: string }[];
+  /** First rows that would change / changed. */
+  preview: { row: number; code: string; name: string; action: 'create' | 'update'; changes: string[] }[];
+}
+
 // ---- Transactions -----------------------------------------------------------------------------
 export interface AttachmentDto {
   id: string;
@@ -111,8 +126,7 @@ export interface TransactionListItem {
   wing: Ref;
   line: Ref | null;
   branch: Ref | null;
-  cvCode: Ref | null;
-  /** Farmer / customer. */
+  /** Farmer / customer; `code` is the CV code. */
   party: Ref | null;
   bank: Ref | null;
   account: Ref | null;

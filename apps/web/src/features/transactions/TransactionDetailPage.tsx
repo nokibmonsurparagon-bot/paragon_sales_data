@@ -339,10 +339,10 @@ export default function TransactionDetailPage() {
                   <Field label="Branch code">{ref(t.branch)}</Field>
                 </Grid>
                 <Grid size={{ xs: 12, sm: 6 }}>
-                  <Field label="CV code">{ref(t.cvCode)}</Field>
+                  <Field label="CV code">{t.party?.code}</Field>
                 </Grid>
                 <Grid size={{ xs: 12, sm: 6 }}>
-                  <Field label="Farmer / Customer">{ref(t.party)}</Field>
+                  <Field label="Farmer / Customer">{t.party?.name}</Field>
                 </Grid>
                 <Grid size={{ xs: 12, sm: 6 }}>
                   <Field label="Deposit amount">

@@ -59,7 +59,7 @@ describe('business rule engine', () => {
   it('required fields including attachments', () => {
     const req = rule({ type: 'REQUIRED_FIELD', params: { fields: ['partyId', 'attachments'] } });
     const r = evaluateRules([req], { fields: { partyId: null }, attachmentCount: 0 }, 'SUBMIT');
-    expect(r.errors[0]?.message).toContain('Farmer / Customer');
+    expect(r.errors[0]?.message).toContain('CV Code / Farmer');
     expect(r.errors[0]?.message).toContain('Supporting Document');
     expect(evaluateRules([req], { fields: { partyId: 'p' }, attachmentCount: 1 }, 'SUBMIT').errors).toHaveLength(0);
   });

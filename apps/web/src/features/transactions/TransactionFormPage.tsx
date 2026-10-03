@@ -55,7 +55,6 @@ interface FormValues {
   fieldForce: UserRef | null;
   line: Picked;
   branch: Picked;
-  cvCode: Picked;
   party: Picked;
   amount: string;
   bankId: string;
@@ -73,7 +72,6 @@ const FORM_FIELD: Record<TransactionEditableField, keyof FormValues> = {
   fieldForceUserId: 'fieldForce',
   lineId: 'line',
   branchId: 'branch',
-  cvCodeId: 'cvCode',
   partyId: 'party',
   amount: 'amount',
   bankId: 'bankId',
@@ -93,7 +91,6 @@ function toPayload(v: FormValues): Record<TransactionEditableField, string | nul
     fieldForceUserId: v.fieldForce?.id ?? null,
     lineId: v.line?.id ?? null,
     branchId: v.branch?.id ?? null,
-    cvCodeId: v.cvCode?.id ?? null,
     partyId: v.party?.id ?? null,
     amount: s(v.amount),
     bankId: s(v.bankId),
@@ -112,7 +109,6 @@ function fromDetail(t: TransactionDetail | undefined, me: UserRef | null, defaul
     fieldForce: t ? t.fieldForce : me,
     line: t?.line ?? null,
     branch: t?.branch ?? null,
-    cvCode: t?.cvCode ?? null,
     party: t?.party ?? null,
     amount: t?.amount ?? '',
     bankId: t?.bank?.id ?? '',
@@ -144,7 +140,6 @@ const REQUIRED: TransactionEditableField[] = [
   'transactionDate',
   'lineId',
   'branchId',
-  'cvCodeId',
   'partyId',
   'amount',
   'bankId',
@@ -428,7 +423,7 @@ export default function TransactionFormPage() {
                   <TextField label="Field Force" value={watch('fieldForce')?.fullName ?? ''} disabled slotProps={{ input: { readOnly: true } }} />
                 )}
               </Grid>
-              <Grid size={{ xs: 12, md: 4 }}>
+              <Grid size={{ xs: 12, sm: 6, md: 3 }}>
                 <Controller
                   name="line"
                   control={control}
@@ -446,7 +441,7 @@ export default function TransactionFormPage() {
                   )}
                 />
               </Grid>
-              <Grid size={{ xs: 12, md: 4 }}>
+              <Grid size={{ xs: 12, sm: 6, md: 3 }}>
                 <Controller
                   name="branch"
                   control={control}
@@ -464,24 +459,6 @@ export default function TransactionFormPage() {
                   )}
                 />
               </Grid>
-              <Grid size={{ xs: 12, md: 4 }}>
-                <Controller
-                  name="cvCode"
-                  control={control}
-                  render={({ field }) => (
-                    <MasterPicker
-                      entity="cv-codes"
-                      label="CV code"
-                      value={field.value}
-                      onChange={field.onChange}
-                      required={req('cvCodeId')}
-                      disabled={dis('cvCodeId')}
-                      error={!!err('cvCode')}
-                      helperText={err('cvCode')}
-                    />
-                  )}
-                />
-              </Grid>
               <Grid size={{ xs: 12, md: 6 }}>
                 <Controller
                   name="party"
@@ -493,7 +470,7 @@ export default function TransactionFormPage() {
                       required={req('partyId')}
                       disabled={dis('partyId')}
                       error={!!err('party')}
-                      helperText={err('party')}
+                      helperText={err('party') ?? 'Type the CV code or the farmer / customer name'}
                     />
                   )}
                 />

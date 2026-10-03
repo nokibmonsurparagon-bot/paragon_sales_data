@@ -28,7 +28,6 @@ export const FILTER_KEYS = [
   'fieldForceUserId',
   'lineId',
   'branchId',
-  'cvCodeId',
   'partyId',
   'bankId',
   'accountId',
@@ -41,7 +40,6 @@ export const FILTER_KEYS = [
 const PICKED_FILTERS: [string, SearchableEntity, string][] = [
   ['lineId', 'lines', 'Line'],
   ['branchId', 'branches', 'Branch'],
-  ['cvCodeId', 'cv-codes', 'CV code'],
 ];
 
 interface Props {
@@ -144,7 +142,7 @@ export function TransactionFilters({ state, update, reset, showSearch = true, sh
             </Grid>
             <Grid size={{ xs: 12, sm: 6, md: 4 }}>
               <PartyPicker
-                value={state.partyId ? { id: state.partyId, name: state.partyName ?? 'Selected farmer / customer' } : null}
+                value={state.partyId ? { id: state.partyId, name: state.partyName ?? 'Selected CV code / farmer' } : null}
                 onChange={(p) => update({ partyId: p?.id, partyName: p?.name })}
               />
             </Grid>

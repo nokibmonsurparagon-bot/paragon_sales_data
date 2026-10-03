@@ -1,3 +1,5 @@
 * text=auto eol=lf
 *.sh text eol=lf
 *.png binary
+# Prisma checksums migration files byte-for-byte: never convert their line endings.
+apps/api/prisma/migrations/**/migration.sql -text

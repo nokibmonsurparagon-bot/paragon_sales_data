@@ -55,7 +55,7 @@ export function today(): string {
 }
 
 export async function refs() {
-  const [doc, cbf, feed, ncb, mtb, ncbAcc, mtbAcc, alpha, beta, cash, corporate, special, line, branch, cv] = await Promise.all([
+  const [doc, cbf, feed, ncb, mtb, ncbAcc, mtbAcc, alpha, beta, cash, corporate, special, line, branch] = await Promise.all([
     prisma.wing.findUniqueOrThrow({ where: { code: 'DOC' } }),
     prisma.wing.findUniqueOrThrow({ where: { code: 'CBF' } }),
     prisma.wing.findUniqueOrThrow({ where: { code: 'FEED' } }),
@@ -70,9 +70,8 @@ export async function refs() {
     prisma.salesType.findUniqueOrThrow({ where: { code: 'SPECIAL' } }),
     prisma.line.findUniqueOrThrow({ where: { code: 'L01' } }),
     prisma.branch.findUniqueOrThrow({ where: { code: 'DHK' } }),
-    prisma.cvCode.findUniqueOrThrow({ where: { code: 'CV-1001' } }),
   ]);
-  return { doc, cbf, feed, ncb, mtb, ncbAcc, mtbAcc, alpha, beta, cash, corporate, special, line, branch, cv };
+  return { doc, cbf, feed, ncb, mtb, ncbAcc, mtbAcc, alpha, beta, cash, corporate, special, line, branch };
 }
 
 let refCounter = 0;
@@ -86,7 +85,6 @@ export async function validBody(overrides: Record<string, unknown> = {}) {
     transactionDate: today(),
     lineId: r.line.id,
     branchId: r.branch.id,
-    cvCodeId: r.cv.id,
     partyId: r.alpha.id,
     // Unique per call so unrelated test transactions are not flagged as possible duplicates.
     amount: `${1000 + refCounter}.00`,

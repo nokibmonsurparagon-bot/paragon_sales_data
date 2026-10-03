@@ -96,8 +96,6 @@ async function describeChanges(db: Db, before: Fields, after: Fields, keys: Tran
         return ref(await db.line.findUnique({ where: { id }, select: { code: true, name: true } }));
       case 'branchId':
         return ref(await db.branch.findUnique({ where: { id }, select: { code: true, name: true } }));
-      case 'cvCodeId':
-        return ref(await db.cvCode.findUnique({ where: { id }, select: { code: true, name: true } }));
       case 'partyId':
         return ref(await db.party.findUnique({ where: { id }, select: { code: true, name: true } }));
       case 'bankId':
@@ -229,7 +227,6 @@ export const transactionsService = {
       transactionDate: null,
       lineId: null,
       branchId: null,
-      cvCodeId: null,
       partyId: null,
       amount: null,
       bankId: null,

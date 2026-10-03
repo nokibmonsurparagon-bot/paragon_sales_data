@@ -73,7 +73,6 @@ async function buildApprovedSnapshot(tx: Prisma.TransactionClient, id: string, a
       fieldForce: { select: { id: true, fullName: true, email: true } },
       line: { select: { id: true, code: true, name: true } },
       branch: { select: { id: true, code: true, name: true } },
-      cvCode: { select: { id: true, code: true, name: true } },
       party: { select: { id: true, code: true, name: true } },
       bank: { select: { id: true, code: true, name: true } },
       account: { select: { id: true, code: true, name: true } },
@@ -83,8 +82,8 @@ async function buildApprovedSnapshot(tx: Prisma.TransactionClient, id: string, a
     },
   });
   return {
-    // v2 adds line, branch, CV code, bank details, Amount (CR) and bank charge.
-    schemaVersion: 2,
+    // v2 added line, branch, bank details, Amount (CR) and bank charge; v3: the CV code is `party.code` (no separate cvCode).
+    schemaVersion: 3,
     transactionId: t.id,
     transactionNumber: t.transactionNumber,
     finalApprovedAt: approvedAt.toISOString(),
@@ -95,8 +94,7 @@ async function buildApprovedSnapshot(tx: Prisma.TransactionClient, id: string, a
       fieldForce: t.fieldForce,
       line: t.line,
       branch: t.branch,
-      cvCode: t.cvCode,
-      /** Farmer / customer. */
+      /** Farmer / customer; `code` is the CV code. */
       party: t.party,
       /** Deposit amount. */
       amount: money(t.amount),

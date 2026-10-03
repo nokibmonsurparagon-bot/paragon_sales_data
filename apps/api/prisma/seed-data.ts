@@ -69,7 +69,7 @@ const PARTIES = [
   { code: 'P0007', name: 'Global Agro Industries' },
   { code: 'P0008', name: 'Horizon Mart' },
 ];
-/** Sample Line / Branch / CV code lists (demo data only; real lists are maintained under Master Data). */
+/** Sample Line / Branch lists (demo data only; real lists are maintained under Master Data or imported from Excel). */
 const LINES = [
   { code: 'L01', name: 'Line 01' },
   { code: 'L02', name: 'Line 02' },
@@ -79,11 +79,6 @@ const BRANCHES = [
   { code: 'DHK', name: 'Dhaka' },
   { code: 'CTG', name: 'Chattogram' },
   { code: 'RAJ', name: 'Rajshahi' },
-];
-const CV_CODES = [
-  { code: 'CV-1001', name: 'CV 1001' },
-  { code: 'CV-1002', name: 'CV 1002' },
-  { code: 'CV-1003', name: 'CV 1003' },
 ];
 const SALES_TYPES = [
   { code: 'CASH', name: 'Cash Sale', isSpecial: false },
@@ -149,7 +144,6 @@ export async function seedDatabase(prisma: PrismaClient, opts: { devUsers: boole
   if (opts.devUsers) {
     for (const l of LINES) await prisma.line.upsert({ where: { code: l.code }, create: l, update: {} });
     for (const b of BRANCHES) await prisma.branch.upsert({ where: { code: b.code }, create: b, update: {} });
-    for (const c of CV_CODES) await prisma.cvCode.upsert({ where: { code: c.code }, create: c, update: {} });
   }
   const salesTypeIds = new Map<string, string>();
   for (const s of SALES_TYPES) {

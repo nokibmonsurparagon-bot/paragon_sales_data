@@ -14,8 +14,9 @@ import Tab from '@mui/material/Tab';
 import Tabs from '@mui/material/Tabs';
 import TextField from '@mui/material/TextField';
 import AddIcon from '@mui/icons-material/Add';
+import UploadFileIcon from '@mui/icons-material/UploadFile';
 import type { GridColDef } from '@mui/x-data-grid';
-import { MASTER_DATA_ENTITIES, type MasterDataEntity, type MasterDataItem } from '@paragon/shared';
+import { MASTER_DATA_ENTITIES, MASTER_IMPORT_COLUMNS, type MasterDataEntity, type MasterDataItem } from '@paragon/shared';
 import { api } from '../../api/endpoints';
 import { ErrorState } from '../../components/Feedback';
 import { errorText, useNotifier } from '../../components/Notifier';
@@ -24,12 +25,12 @@ import { MasterSelect } from '../../components/Pickers';
 import { ServerGrid } from '../../components/ServerGrid';
 import { useDebounced, useUrlState } from '../../hooks';
 import { formatDateTime } from '../../utils/format';
+import { ImportDialog } from './ImportDialog';
 
 const LABELS: Record<MasterDataEntity, string> = {
   wings: 'Wings',
   lines: 'Lines',
   branches: 'Branches',
-  'cv-codes': 'CV Codes',
   banks: 'Banks',
   accounts: 'Accounts',
   parties: 'Farmers / Customers',
@@ -39,13 +40,14 @@ const SINGULAR: Record<MasterDataEntity, string> = {
   wings: 'wing',
   lines: 'line',
   branches: 'branch',
-  'cv-codes': 'CV code',
   banks: 'bank',
   accounts: 'account',
   parties: 'farmer / customer',
   'sales-types': 'sales type',
 };
 const DEFAULTS = { entity: 'wings', page: '1', limit: '20', sort: 'name:asc' };
+/** Column labels follow the import template, e.g. farmers are identified by their "CV Code". */
+const header = (entity: MasterDataEntity, field: 'code' | 'name') => MASTER_IMPORT_COLUMNS[entity].find((c) => c.field === field)!.header;
 
 interface Draft {
   code: string;
@@ -61,6 +63,7 @@ export default function MasterDataPage() {
   const [search, setSearch] = useState('');
   const q = useDebounced(search);
   const [editing, setEditing] = useState<MasterDataItem | 'new' | null>(null);
+  const [importing, setImporting] = useState(false);
 
   const params = { page: state.page, limit: state.limit, sort: state.sort, q, status: state.status };
   const list = useQuery({
@@ -70,8 +73,8 @@ export default function MasterDataPage() {
   });
 
   const columns: GridColDef<MasterDataItem>[] = [
-    { field: 'code', headerName: 'Code', width: 150 },
-    { field: 'name', headerName: 'Name', flex: 1, minWidth: 200 },
+    { field: 'code', headerName: header(entity, 'code'), width: 160 },
+    { field: 'name', headerName: header(entity, 'name'), flex: 1, minWidth: 200 },
     ...(entity === 'accounts' ? [{ field: 'bank', headerName: 'Bank', width: 220, sortable: false, valueGetter: (_v: unknown, r: MasterDataItem) => r.bank?.name ?? '' } as GridColDef<MasterDataItem>] : []),
     ...(entity === 'sales-types'
       ? [{ field: 'isSpecial', headerName: 'Special', width: 110, sortable: false, renderCell: ({ row }) => (row.isSpecial ? <Chip size="small" label="Special" color="secondary" /> : '—') } as GridColDef<MasterDataItem>]
@@ -91,9 +94,14 @@ export default function MasterDataPage() {
         title="Master Data"
         subtitle="Records are never deleted – set them to Inactive to hide them from new transactions."
         actions={
-          <Button variant="contained" startIcon={<AddIcon />} onClick={() => setEditing('new')}>
-            New {SINGULAR[entity]}
-          </Button>
+          <>
+            <Button startIcon={<UploadFileIcon />} onClick={() => setImporting(true)}>
+              Import from Excel
+            </Button>
+            <Button variant="contained" startIcon={<AddIcon />} onClick={() => setEditing('new')}>
+              New {SINGULAR[entity]}
+            </Button>
+          </>
         }
       />
       <Tabs value={entity} onChange={(_e, v: string) => update({ entity: v, sort: 'name:asc', status: undefined })} variant="scrollable" sx={{ mb: 2 }}>
@@ -102,7 +110,7 @@ export default function MasterDataPage() {
         ))}
       </Tabs>
       <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} sx={{ mb: 2 }}>
-        <TextField placeholder="Search code or name" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Search" />
+        <TextField placeholder={`Search ${header(entity, 'code').toLowerCase()} or name`} value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Search" />
         <TextField select label="Status" value={state.status ?? ''} onChange={(e) => update({ status: e.target.value || undefined })} sx={{ maxWidth: { sm: 200 } }}>
           <MenuItem value="">All</MenuItem>
           <MenuItem value="ACTIVE">Active</MenuItem>
@@ -122,6 +130,7 @@ export default function MasterDataPage() {
         onRowClick={(row) => setEditing(row)}
       />
       <MasterDialog entity={entity} item={editing} onClose={() => setEditing(null)} />
+      <ImportDialog entity={entity} label={LABELS[entity]} open={importing} onClose={() => setImporting(false)} />
     </>
   );
 }
@@ -161,8 +170,8 @@ function MasterDialog({ entity, item, onClose }: { entity: MasterDataEntity; ite
       <DialogContent>
         <Stack spacing={2} sx={{ pt: 1 }}>
           {error && <ErrorState error={new Error(error)} />}
-          <TextField label="Code" required value={v.code} onChange={(e) => setV({ ...v, code: e.target.value.toUpperCase() })} helperText="Letters, digits, - and _ (stored upper-case)" />
-          <TextField label="Name" required value={v.name} onChange={(e) => setV({ ...v, name: e.target.value })} />
+          <TextField label={header(entity, 'code')} required value={v.code} onChange={(e) => setV({ ...v, code: e.target.value.toUpperCase() })} helperText="Letters, digits, - and _ (stored upper-case)" />
+          <TextField label={header(entity, 'name')} required value={v.name} onChange={(e) => setV({ ...v, name: e.target.value })} />
           {entity === 'accounts' && <MasterSelect entity="banks" label="Bank" required value={v.bankId} onChange={(bankId) => setV({ ...v, bankId })} />}
           {entity === 'sales-types' && (
             <FormControlLabel

@@ -66,7 +66,9 @@ everything else → Accountant.
 
 **Final approval records Amount (CR)** – what the bank actually credited. The bank charge is calculated as deposit amount −
 Amount (CR). Reviewers can approve or reject straight from the **Approvals** table, one row at a time or in bulk (tick the
-rows; finance rows need Amount (CR) typed in the row). Line, Branch and CV code lists are managed under *Master Data*.
+rows; finance rows need Amount (CR) typed in the row). The **CV code is the farmer / customer code**. Farmers / customers,
+lines, branches, banks, accounts and sales types are managed under *Master Data*, where each list can also be **imported
+from Excel** (download the template or the current list, *Check file*, then *Import*).
 
 ## Docker
 

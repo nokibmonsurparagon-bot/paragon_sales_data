@@ -29,12 +29,12 @@ const REPORTS: { type: ReportType; label: string; audit?: boolean }[] = [
   { type: 'audit', label: 'Audit', audit: true },
 ];
 const DEFAULTS = { type: 'sales', page: '1', limit: '20' };
-const FILTERS = ['dateFrom', 'dateTo', 'wingId', 'lineId', 'branchId', 'cvCodeId', 'status', 'bankId', 'salesTypeId', 'stage', 'userId', 'action'] as const;
+const FILTERS = ['dateFrom', 'dateTo', 'wingId', 'lineId', 'branchId', 'partyId', 'status', 'bankId', 'salesTypeId', 'stage', 'userId', 'action'] as const;
 const MONEY_COLUMNS = new Set(['amount', 'creditAmount', 'bankCharge']);
 const PICKED: [string, SearchableEntity, string][] = [
   ['lineId', 'lines', 'Line'],
   ['branchId', 'branches', 'Branch'],
-  ['cvCodeId', 'cv-codes', 'CV code'],
+  ['partyId', 'parties', 'CV code / farmer'],
 ];
 
 export default function ReportsPage() {

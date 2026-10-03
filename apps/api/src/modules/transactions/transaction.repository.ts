@@ -17,7 +17,6 @@ export const transactionListInclude = {
   wing: refSelect,
   line: refSelect,
   branch: refSelect,
-  cvCode: refSelect,
   party: refSelect,
   bank: refSelect,
   account: refSelect,
@@ -100,7 +99,6 @@ export function filterWhere(f: Partial<TransactionFilter>): Prisma.SalesTransact
   if (f.fieldForceUserId) and.push({ fieldForceUserId: f.fieldForceUserId });
   if (f.lineId) and.push({ lineId: f.lineId });
   if (f.branchId) and.push({ branchId: f.branchId });
-  if (f.cvCodeId) and.push({ cvCodeId: f.cvCodeId });
   if (f.partyId) and.push({ partyId: f.partyId });
   if (f.bankId) and.push({ bankId: f.bankId });
   if (f.accountId) and.push({ accountId: f.accountId });
@@ -124,7 +122,6 @@ export function filterWhere(f: Partial<TransactionFilter>): Prisma.SalesTransact
       { wing: { name: { contains: q, mode: 'insensitive' } } },
       { line: { name: { contains: q, mode: 'insensitive' } } },
       { branch: { code: { contains: q, mode: 'insensitive' } } },
-      { cvCode: { code: { contains: q, mode: 'insensitive' } } },
       { bankDetails: { contains: q, mode: 'insensitive' } },
       { remarks: { contains: q, mode: 'insensitive' } },
       { fieldForce: { fullName: { contains: q, mode: 'insensitive' } } },

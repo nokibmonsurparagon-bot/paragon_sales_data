@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { NextFunction, Request, RequestHandler, Response } from 'express';
 import { rateLimit } from 'express-rate-limit';
 import multer from 'multer';
-import { ERROR_CODES, type ApiFailure, type Permission } from '@paragon/shared';
+import { ERROR_CODES, MASTER_IMPORT_MAX_MB, type ApiFailure, type Permission } from '@paragon/shared';
 import { env } from '../config/env.js';
 import { loadAuthz } from './authz.js';
 import { getContext, hasPermission, runWithContext } from './context.js';
@@ -87,6 +87,12 @@ export const loginRateLimit = rateLimit({
   skip: () => env.isTest,
   handler: rateLimited,
 });
+
+/** Master-data import file (Excel / CSV), kept in memory and parsed, never stored. */
+export const importFileUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: MASTER_IMPORT_MAX_MB * 1024 * 1024, files: 1, fields: 5 },
+}).single('file');
 
 /** In-memory upload (single file). Content is validated (magic bytes) before it is stored. */
 export const singleFileUpload = multer({

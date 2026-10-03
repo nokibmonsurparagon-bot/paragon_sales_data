@@ -82,7 +82,6 @@ describe('transaction schemas', () => {
           'transactionDate',
           'lineId',
           'branchId',
-          'cvCodeId',
           'partyId',
           'bankId',
           'accountId',

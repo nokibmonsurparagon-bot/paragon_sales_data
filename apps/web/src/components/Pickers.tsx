@@ -92,9 +92,9 @@ export async function loadPartyRefs(ids: string[]): Promise<RefOption[]> {
 }
 
 /** Master-data lists that can be large: picked with server-side search instead of a plain dropdown. */
-export type SearchableEntity = Extract<MasterDataEntity, 'lines' | 'branches' | 'cv-codes' | 'parties'>;
+export type SearchableEntity = Extract<MasterDataEntity, 'lines' | 'branches' | 'parties'>;
 
-/** Server-side searched master-data picker (farmer / customer, line, branch and CV code lists can be large). */
+/** Server-side searched master-data picker (farmer / customer, line and branch lists can be large). */
 export function MasterPicker({
   entity,
   value,
@@ -104,6 +104,7 @@ export function MasterPicker({
   disabled,
   error,
   helperText,
+  codeFirst,
 }: {
   entity: SearchableEntity;
   value: RefOption | null;
@@ -113,6 +114,8 @@ export function MasterPicker({
   disabled?: boolean;
   error?: boolean;
   helperText?: string;
+  /** Show "CODE – Name" (farmers are known by their CV code). */
+  codeFirst?: boolean;
 }) {
   const [input, setInput] = useState('');
   const q = useDebounced(input);
@@ -127,7 +130,7 @@ export function MasterPicker({
       value={value}
       onChange={(_e, v) => onChange(v)}
       onInputChange={(_e, v, reason) => reason === 'input' && setInput(v)}
-      getOptionLabel={(o) => (o.code ? `${o.name} (${o.code})` : o.name)}
+      getOptionLabel={(o) => (!o.code ? o.name : codeFirst ? `${o.code} – ${o.name}` : `${o.name} (${o.code})`)}
       isOptionEqualToValue={(a, b) => a.id === b.id}
       filterOptions={(x) => x}
       loading={isFetching}
@@ -137,9 +140,9 @@ export function MasterPicker({
   );
 }
 
-/** Farmer / customer picker (the "parties" master data). */
-export function PartyPicker({ label = 'Farmer / Customer', ...p }: Omit<Parameters<typeof MasterPicker>[0], 'entity' | 'label'> & { label?: string }) {
-  return <MasterPicker entity="parties" label={label} {...p} />;
+/** Farmer / customer picker (the "parties" master data); searches CV code and name. */
+export function PartyPicker({ label = 'CV Code / Farmer', ...p }: Omit<Parameters<typeof MasterPicker>[0], 'entity' | 'label'> & { label?: string }) {
+  return <MasterPicker entity="parties" label={label} codeFirst {...p} />;
 }
 
 export function MultiPartyPicker({ value, onChange }: { value: RefOption[]; onChange(v: RefOption[]): void }) {

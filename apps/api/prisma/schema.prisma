@@ -271,22 +271,6 @@ model Branch {
   @@map("branches")
 }
 
-/// CV code (admin-managed dropdown on the transaction form).
-model CvCode {
-  id        String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  code      String       @unique @db.VarChar(30)
-  name      String       @db.VarChar(150)
-  status    MasterStatus @default(ACTIVE)
-  createdAt DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
-
-  transactions SalesTransaction[]
-
-  @@index([status, name])
-  @@index([name(ops: raw("gin_trgm_ops"))], type: Gin, map: "cv_codes_name_trgm_idx")
-  @@map("cv_codes")
-}
-
 model Bank {
   id        String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   code      String       @unique @db.VarChar(30)
@@ -318,7 +302,7 @@ model Account {
   @@map("accounts")
 }
 
-/// Farmer / customer.
+/// Farmer / customer. `code` is the farmer's CV code.
 model Party {
   id        String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   code      String       @unique @db.VarChar(30)
@@ -366,8 +350,7 @@ model SalesTransaction {
   fieldForceUserId     String            @map("field_force_user_id") @db.Uuid
   lineId               String?           @map("line_id") @db.Uuid
   branchId             String?           @map("branch_id") @db.Uuid
-  cvCodeId             String?           @map("cv_code_id") @db.Uuid
-  /// Farmer / customer.
+  /// Farmer / customer (its code is the CV code).
   partyId              String?           @map("party_id") @db.Uuid
   /// Deposit amount.
   amount               Decimal?          @db.Decimal(18, 2)
@@ -419,7 +402,6 @@ model SalesTransaction {
   fieldForce         User          @relation("TransactionFieldForce", fields: [fieldForceUserId], references: [id], onDelete: Restrict)
   line               Line?         @relation(fields: [lineId], references: [id], onDelete: Restrict)
   branch             Branch?       @relation(fields: [branchId], references: [id], onDelete: Restrict)
-  cvCode             CvCode?       @relation(fields: [cvCodeId], references: [id], onDelete: Restrict)
   party              Party?        @relation(fields: [partyId], references: [id], onDelete: Restrict)
   bank               Bank?         @relation(fields: [bankId], references: [id], onDelete: Restrict)
   account            Account?      @relation(fields: [accountId], references: [id], onDelete: Restrict)
@@ -447,7 +429,6 @@ model SalesTransaction {
   @@index([partyId])
   @@index([lineId])
   @@index([branchId])
-  @@index([cvCodeId])
   @@index([transactionDate])
   @@index([createdAt])
   @@index([partyId, amount, transactionDate], map: "sales_transactions_duplicate_lookup_idx")

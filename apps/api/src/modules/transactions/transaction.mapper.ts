@@ -24,7 +24,6 @@ export function toListItem(t: TransactionListRow): TransactionListItem {
     wing: t.wing,
     line: t.line,
     branch: t.branch,
-    cvCode: t.cvCode,
     party: t.party,
     bank: t.bank,
     account: t.account,
@@ -89,7 +88,6 @@ export function businessFields(t: {
   fieldForceUserId: string;
   lineId: string | null;
   branchId: string | null;
-  cvCodeId: string | null;
   partyId: string | null;
   amount: Prisma.Decimal | null;
   bankId: string | null;
@@ -105,7 +103,6 @@ export function businessFields(t: {
     fieldForceUserId: t.fieldForceUserId,
     lineId: t.lineId,
     branchId: t.branchId,
-    cvCodeId: t.cvCodeId,
     partyId: t.partyId,
     amount: money(t.amount),
     bankId: t.bankId,

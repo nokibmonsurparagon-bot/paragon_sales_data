@@ -69,6 +69,8 @@ const ENDPOINTS: Endpoint[] = [
     { method: 'get', path: `/${e}/{id}`, tag: 'Master Data', summary: `Get ${e}`, auth: 'authenticated', params: id },
     { method: 'post', path: `/${e}`, tag: 'Master Data', summary: `Create ${e}`, auth: 'MASTER_DATA_MANAGE', body: S.masterDataCreateSchemas[e] },
     { method: 'patch', path: `/${e}/{id}`, tag: 'Master Data', summary: `Update ${e}`, auth: 'MASTER_DATA_MANAGE', params: id, body: S.masterDataUpdateSchemas[e] },
+    { method: 'get', path: `/${e}/import-template`, tag: 'Master Data', summary: `Excel template for importing ${e} (withData=true: all current records)`, auth: 'MASTER_DATA_MANAGE', query: S.masterTemplateQuerySchema, binary: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' },
+    { method: 'post', path: `/${e}/import`, tag: 'Master Data', summary: `Import ${e} from .xlsx/.csv (multipart "file"); matched on code – adds new, updates existing; dryRun=true (default) only checks; all-or-nothing`, auth: 'MASTER_DATA_MANAGE', query: S.masterImportQuerySchema, multipart: true },
   ]),
 
   // Users & roles

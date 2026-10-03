@@ -6,7 +6,7 @@ import type { AuthenticatedUser } from '../../core/context.js';
 import type { EditPolicy, GuardActor, GuardSubject } from '../workflow/state-machine.js';
 
 type Refs = Partial<
-  Record<'wingId' | 'lineId' | 'branchId' | 'cvCodeId' | 'partyId' | 'bankId' | 'accountId' | 'salesTypeId' | 'fieldForceUserId', string | null>
+  Record<'wingId' | 'lineId' | 'branchId' | 'partyId' | 'bankId' | 'accountId' | 'salesTypeId' | 'fieldForceUserId', string | null>
 >;
 
 /**
@@ -30,8 +30,7 @@ export async function assertReferences(db: Db, refs: Refs, changed: Set<string>,
   await check('wingId', 'Wing', (id) => db.wing.findUnique({ where: { id }, select: { status: true } }));
   await check('lineId', 'Line', (id) => db.line.findUnique({ where: { id }, select: { status: true } }));
   await check('branchId', 'Branch', (id) => db.branch.findUnique({ where: { id }, select: { status: true } }));
-  await check('cvCodeId', 'CV code', (id) => db.cvCode.findUnique({ where: { id }, select: { status: true } }));
-  await check('partyId', 'Farmer / customer', (id) => db.party.findUnique({ where: { id }, select: { status: true } }));
+  await check('partyId', 'CV code / farmer', (id) => db.party.findUnique({ where: { id }, select: { status: true } }));
   await check('bankId', 'Bank', (id) => db.bank.findUnique({ where: { id }, select: { status: true } }));
   await check('salesTypeId', 'Sales type', (id) => db.salesType.findUnique({ where: { id }, select: { status: true } }));
   await check('fieldForceUserId', 'Field Force user', (id) => db.user.findUnique({ where: { id }, select: { status: true } }));

@@ -1,5 +1,5 @@
 /**
- * CR2: Line / Branch / CV code master data, bank details, Amount (CR) + bank charge at the final approval,
+ * CR2/CR3: Line / Branch master data, CV code = farmer / customer code, bank details, Amount (CR) + bank charge at the final approval,
  * per-row actions in the review queue and bulk approve / reject.
  */
 import { beforeAll, describe, expect, it } from 'vitest';
@@ -31,8 +31,8 @@ async function queue(token: string): Promise<TransactionListItem[]> {
   return res.body.data.items;
 }
 
-describe('line, branch and CV code master data', () => {
-  it.each(['lines', 'branches', 'cv-codes'])('%s: listed for everyone, managed by administrators only', async (entity) => {
+describe('line and branch master data', () => {
+  it.each(['lines', 'branches'])('%s: listed for everyone, managed by administrators only', async (entity) => {
     expect((await api().get(`/api/${entity}`).set(bearer(ff1))).body.data.total).toBe(3);
     expect((await api().post(`/api/${entity}`).set(bearer(ff1)).send({ code: 'X1', name: 'X one' })).status).toBe(403);
     const created = await api().post(`/api/${entity}`).set(bearer(admin)).send({ code: 'x1', name: 'X one' });
@@ -40,6 +40,13 @@ describe('line, branch and CV code master data', () => {
     expect(created.body.data.code).toBe('X1');
     const off = await api().patch(`/api/${entity}/${created.body.data.id}`).set(bearer(admin)).send({ status: 'INACTIVE' });
     expect(off.body.data.status).toBe('INACTIVE');
+  });
+
+  it('the separate CV code list is gone: the CV code is the farmer / customer code', async () => {
+    expect((await api().get('/api/cv-codes').set(bearer(ff1))).status).toBe(404);
+    const t = await createDraft(ff1);
+    expect(t.party?.code).toBe('P0001');
+    expect((await api().post('/api/transactions').set(bearer(ff1)).send({ wingId: t.wing.id, cvCodeId: t.party!.id })).status).toBe(400);
   });
 
   it('inactive entries cannot be chosen for a transaction', async () => {
@@ -56,7 +63,6 @@ describe('new transaction fields', () => {
     const t = await createDraft(ff1, { bankDetails: 'Pubali Bank, Agrabad branch', remarks: 'Narration text' });
     expect(t.line?.code).toBe('L01');
     expect(t.branch?.code).toBe('DHK');
-    expect(t.cvCode?.code).toBe('CV-1001');
     expect(t.bankDetails).toBe('Pubali Bank, Agrabad branch');
     expect(t.remarks).toBe('Narration text');
     expect(t.creditAmount).toBeNull();
@@ -64,13 +70,13 @@ describe('new transaction fields', () => {
     expect(found.body.data.items.map((i: { id: string }) => i.id)).toContain(t.id);
   });
 
-  it('line, branch, CV code and bank details are required to submit', async () => {
-    const t = await createDraft(ff1, { lineId: null, branchId: null, cvCodeId: null, bankDetails: null });
+  it('line, branch, CV code / farmer and bank details are required to submit', async () => {
+    const t = await createDraft(ff1, { lineId: null, branchId: null, partyId: null, bankDetails: null });
     await attachPdf(ff1, t.id);
     const res = await act(ff1, t.id, 'submit');
     expect(res.status).toBe(400);
     expect(res.body.error.details.map((d: { path: string }) => d.path)).toEqual(
-      expect.arrayContaining(['lineId', 'branchId', 'cvCodeId', 'bankDetails']),
+      expect.arrayContaining(['lineId', 'branchId', 'partyId', 'bankDetails']),
     );
   });
 });
@@ -104,7 +110,7 @@ describe('Amount (CR) and bank charge at the final approval', () => {
     expect(t.bankCharge).toBe('24.50');
     const row = await prisma.salesTransaction.findUniqueOrThrow({ where: { id } });
     const snap = row.approvedSnapshot as { schemaVersion: number; approvedData: Record<string, unknown> };
-    expect(snap.schemaVersion).toBe(2);
+    expect(snap.schemaVersion).toBe(3);
     expect(snap.approvedData).toMatchObject({ amount: '5000.00', creditAmount: '4975.50', bankCharge: '24.50', bankDetails: 'Sonali Bank, Motijheel branch' });
     expect(snap.approvedData.line).toMatchObject({ code: 'L01' });
     const history = await api().get(`/api/transactions/${id}/history`).set(bearer(accountant));

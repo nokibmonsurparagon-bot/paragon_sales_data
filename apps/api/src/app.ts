@@ -76,7 +76,6 @@ export function createApp(): Express {
   app.use('/api/wings', masterDataRouter('wings'));
   app.use('/api/lines', masterDataRouter('lines'));
   app.use('/api/branches', masterDataRouter('branches'));
-  app.use('/api/cv-codes', masterDataRouter('cv-codes'));
   app.use('/api/banks', masterDataRouter('banks'));
   app.use('/api/accounts', masterDataRouter('accounts'));
   app.use('/api/parties', masterDataRouter('parties'));

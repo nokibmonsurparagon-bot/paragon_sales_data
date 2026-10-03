@@ -3,13 +3,14 @@
 Status: **Phases 1–17 implemented** (2026-09-26). All phases were pre-approved together with the recommended defaults in
 [ARCHITECTURE.md §9](ARCHITECTURE.md#9-ambiguities-and-decisions-needed); further changes are expected during UAT.
 **Change request 1 – Wings** implemented 2026-09-28; **change request 2 – new fields, Amount (CR) / bank charge, table
-and bulk approval** implemented 2026-09-30 (see [below](#change-requests)).
+and bulk approval** implemented 2026-09-30; **change request 3 – CV code = farmer code, Excel import** implemented
+2026-10-01 (see [below](#change-requests)).
 
 ## Verification summary
 
 | Check | Result |
 |---|---|
-| API tests (unit + integration against real PostgreSQL) | **140 / 140 pass** |
+| API tests (unit + integration against real PostgreSQL) | **151 / 151 pass** |
 | Shared package tests (schemas, formatting, role policy, bank charge) | **28 / 28 pass** |
 | Web tests (components, validation helpers) | **12 / 12 pass** |
 | `tsc --noEmit` (strict) – shared, API, web | clean |
@@ -109,21 +110,34 @@ sales types should be restricted per wing (currently shared by all wings).
 
 | Area | Behaviour |
 |---|---|
-| Master data | New tabs **Lines**, **Branches**, **CV Codes** (code, name, active/inactive; admin-managed). *Parties* is shown as **Farmers / Customers** (same data). Demo lists L01–L03, DHK/CTG/RAJ, CV-1001–1003 are seeded only with the demo users. |
-| Transaction form | New fields **Line name**, **Branch code**, **CV code** (searchable dropdowns), **Bank branch / bank details** (free text, where the deposit came from). *Amount* is labelled **Deposit amount**, *Remarks* **Narration**, *Party* **Farmer / Customer**. All four new fields are required to submit (drafts may leave them empty). |
+| Master data | New tabs **Lines** and **Branches** (code, name, active/inactive; admin-managed). *Parties* is shown as **Farmers / Customers** (same data). Demo lists L01–L03 and DHK/CTG/RAJ are seeded only with the demo users. *(A separate CV Codes list was replaced in CR3.)* |
+| Transaction form | New fields **Line name**, **Branch code** (searchable dropdowns), **Bank branch / bank details** (free text, where the deposit came from). *Amount* is labelled **Deposit amount**, *Remarks* **Narration**. The new fields are required to submit (drafts may leave them empty). |
 | Amount (CR) | Entered **only by Accountant / Treasury at the final approval** (approve dialog or directly in the Approvals table); required for final approval; must be > 0 and **≤ deposit amount** (`422` otherwise). |
 | Bank charge | **Deposit amount − Amount (CR)**, 0 when equal; calculated in exact cents, stored with the transaction (DB CHECK keeps both consistent), shown live while typing, recorded in the history/audit and in the approved snapshot. |
 | Approvals table | Per-row **Approve / Reject** buttons, **Amount (CR)** input and live bank charge for finance rows, document count, checkboxes with **Approve N / Reject N**. Bulk: up to 50 rows, confirmation shows count and total; reject asks one reason (optional category) for all. *Return for correction* stays on the detail page. |
 | Bulk processing | `POST /api/transactions/bulk-approve` / `bulk-reject`: every item goes through exactly the same checks as a single action (wing, claim, duplicate, segregation of duties, version) in its **own DB transaction** – partial success, per-item results dialog. The audit entry of each item carries `bulk: true`. |
-| Lists, filters, reports | Farmer / Customer, CV Code, Deposit, Amount (CR) columns (Line, Branch, Bank details, Bank charge available from the column menu); filters and search for line / branch / CV code / bank details / narration; sales report and exports add Line, Branch, CV Code, Amount (CR), Bank Charge, Bank Details, Narration. |
-| Integration readiness | `approved_snapshot.schemaVersion` = 2 with `line`, `branch`, `cvCode`, `bankDetails`, `creditAmount`, `bankCharge`. |
+| Lists, filters, reports | Farmer / Customer, CV Code, Deposit, Amount (CR) columns (Line, Branch, Bank details, Bank charge available from the column menu); filters and search for line / branch / bank details / narration; sales report and exports add Line, Branch, CV Code, Amount (CR), Bank Charge, Bank Details, Narration. |
+| Integration readiness | `approved_snapshot.schemaVersion` = 2 with `line`, `branch`, `bankDetails`, `creditAmount`, `bankCharge` (v3 since CR3). |
 
 Migration `20260930113943_line_branch_cv_credit_amount` only adds tables and nullable columns: existing transactions keep
 their data and show the new fields as empty; transactions already under review can still be edited (only fields being
 changed are checked for completeness).
 
-Defaults to confirm in UAT: Line / Branch / CV code are independent lists (no Line → Branch → CV → Farmer chain yet);
-no Excel import of master data yet; the bank charge rule (deposit − Amount (CR), Amount (CR) may not exceed the deposit).
+Default to confirm in UAT: the bank charge rule (deposit − Amount (CR), Amount (CR) may not exceed the deposit).
+
+### 3. CV code = farmer / customer code; Excel import (2026-10-01)
+
+| Area | Behaviour |
+|---|---|
+| CV code | The CV code **is the farmer / customer code** (`parties.code`). The separate CV Codes list is removed; the form has one searchable **CV Code / Farmer** field (type the CV code or the name; shown as `CV-1001 – Name`). Lists, detail page and reports show the CV code from the farmer. Line and Branch stay separate lists. |
+| Excel import | Every master-data tab (Farmers / Customers, Lines, Branches, Banks, Accounts, Sales Types, Wings) has **Import from Excel**: download an empty template or the current list, fill / edit it in Excel, **Check file** (nothing saved; shows new / updated / unchanged rows and every error with row and column), then **Import** (one DB transaction – all rows or none). Matched on the code: new codes are added, existing ones updated, nothing is deleted. .xlsx or .csv, up to 20,000 rows / 10 MB; codes keep leading zeros; headers are matched ignoring case and punctuation (e.g. "CV No", "Farmer Name"). Accounts need an existing bank code. One audit entry per import lists the added codes and the changes. |
+| Integration readiness | `approved_snapshot.schemaVersion` = 3: no `cvCode`; the CV code is `party.code`. |
+
+Migration `20261001090000_merge_cv_code_into_party` drops the `cv_codes` table and `sales_transactions.cv_code_id`. Only
+the sample codes CV-1001–1003 existed; approved transactions keep the CV code they had in their frozen `approved_snapshot`.
+Migration files are now committed byte-for-byte (`.gitattributes` `-text`), because Prisma checksums them.
+
+Not included (ask if needed): a Line → Branch → Farmer filter chain; Excel import of transactions.
 
 ## Recommended next steps (UAT)
 

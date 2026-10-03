@@ -40,7 +40,7 @@ export function useTransactionColumns(basePath: string): GridColDef<TransactionL
       { field: 'wing', headerName: 'Wing', width: 100, sortable: false, valueGetter: (_v, row) => row.wing.name },
       { field: 'line', headerName: 'Line', width: 110, sortable: false, valueGetter: (_v, row) => row.line?.name ?? '—' },
       { field: 'branch', headerName: 'Branch', width: 100, sortable: false, valueGetter: (_v, row) => row.branch?.code ?? '—' },
-      { field: 'cvCode', headerName: 'CV Code', width: 110, sortable: false, valueGetter: (_v, row) => row.cvCode?.code ?? '—' },
+      { field: 'cvCode', headerName: 'CV Code', width: 110, sortable: false, valueGetter: (_v, row) => row.party?.code ?? '—' },
       { field: 'party', headerName: 'Farmer / Customer', minWidth: 160, flex: 1.2, sortable: false, valueGetter: (_v, row) => row.party?.name ?? '—' },
       {
         field: 'amount',

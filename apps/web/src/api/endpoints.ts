@@ -11,6 +11,7 @@ import type {
   LoginResult,
   MasterDataEntity,
   MasterDataItem,
+  MasterImportResult,
   NotificationDto,
   Paginated,
   PermissionDto,
@@ -69,6 +70,14 @@ export const api = {
     get: (entity: MasterDataEntity, id: string) => get<MasterDataItem>(`/${entity}/${id}`),
     create: (entity: MasterDataEntity, body: object) => post<MasterDataItem>(`/${entity}`, body),
     update: (entity: MasterDataEntity, id: string, body: object) => patch<MasterDataItem>(`/${entity}/${id}`, body),
+    template: (entity: MasterDataEntity, withData: boolean) =>
+      download(`/${entity}/import-template`, { withData }, `${entity}-${withData ? 'export' : 'template'}.xlsx`),
+    importFile: async (entity: MasterDataEntity, file: File, dryRun: boolean) => {
+      const form = new FormData();
+      form.append('file', file);
+      const r = await http.post<{ data: MasterImportResult; message?: string }>(`/${entity}/import`, form, { params: { dryRun } });
+      return r.data.data;
+    },
   },
 
   users: {

@@ -30,6 +30,9 @@ Spec: `docs/SPECIFICATION.md` · design: `docs/ARCHITECTURE.md` · status/limita
 - Amount (CR) (`creditAmount`) is set only by `FIN_APPROVE` (approve body / bulk item); `bankCharge` = amount − creditAmount via
   shared `bankCharge()` (DB CHECK enforces it). Bulk approve/reject (`workflowService.bulk`) runs each item through
   `review()` → `execute()` in its own DB transaction – never add a bulk path that bypasses the per-item guards.
+- CV code = farmer / customer code (`parties.code`); there is no separate CV entity. Master-data Excel/CSV import:
+  `master-import.ts` (pure parsing, columns from shared `MASTER_IMPORT_COLUMNS`) + `masterDataService.importFile` (dry run by
+  default, all-or-nothing). Never re-save `prisma/migrations/**` with different line endings – Prisma checksums the bytes.
 - Money = decimal strings (`^\d+(\.\d{1,2})?$`), compared via `toCents`. Dates = `YYYY-MM-DD`.
 - Errors: throw `AppError` subclasses from `core/errors.ts`; response envelope `{ success, data|error, requestId }`.
 - Relative imports in API/shared use `.js` extensions (ESM, NodeNext).

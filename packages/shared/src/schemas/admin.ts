@@ -27,7 +27,8 @@ import {
 import { transactionFilterSchema } from './transaction.js';
 
 // ---- Master data ------------------------------------------------------------------------------
-export const MASTER_DATA_ENTITIES = ['wings', 'lines', 'branches', 'cv-codes', 'banks', 'accounts', 'parties', 'sales-types'] as const;
+/** `parties` = farmers / customers; their code is the CV code. */
+export const MASTER_DATA_ENTITIES = ['wings', 'lines', 'branches', 'banks', 'accounts', 'parties', 'sales-types'] as const;
 export type MasterDataEntity = (typeof MASTER_DATA_ENTITIES)[number];
 
 export const masterDataBaseCreateSchema = z.strictObject({
@@ -46,7 +47,6 @@ export const masterDataCreateSchemas = {
   wings: masterDataBaseCreateSchema,
   lines: masterDataBaseCreateSchema,
   branches: masterDataBaseCreateSchema,
-  'cv-codes': masterDataBaseCreateSchema,
   banks: masterDataBaseCreateSchema,
   parties: masterDataBaseCreateSchema,
   accounts: masterDataBaseCreateSchema.extend({ bankId: z.uuid('Bank is required') }),
@@ -57,7 +57,6 @@ export const masterDataUpdateSchemas = {
   wings: masterDataBaseUpdateSchema,
   lines: masterDataBaseUpdateSchema,
   branches: masterDataBaseUpdateSchema,
-  'cv-codes': masterDataBaseUpdateSchema,
   banks: masterDataBaseUpdateSchema,
   parties: masterDataBaseUpdateSchema,
   accounts: z.strictObject({
@@ -73,6 +72,79 @@ export const masterDataUpdateSchemas = {
     isSpecial: z.boolean().optional(),
   }),
 } as const;
+
+// ---- Master data import (Excel / CSV) ---------------------------------------------------------------
+export const MASTER_IMPORT_MAX_ROWS = 20_000;
+export const MASTER_IMPORT_MAX_MB = 10;
+
+export type MasterImportField = 'code' | 'name' | 'status' | 'bankCode' | 'isSpecial';
+
+export interface MasterImportColumn {
+  field: MasterImportField;
+  /** Header written to the template. */
+  header: string;
+  /** Other accepted headers (matched ignoring case, spaces and punctuation). */
+  aliases: string[];
+  required: boolean;
+  hint: string;
+}
+
+const codeCol = (header: string, ...aliases: string[]): MasterImportColumn => ({
+  field: 'code',
+  header,
+  aliases: ['code', ...aliases],
+  required: true,
+  hint: 'Unique code; letters, digits, - and _ (stored upper-case). Existing codes are updated, new codes are added.',
+});
+const nameCol = (header: string, ...aliases: string[]): MasterImportColumn => ({
+  field: 'name',
+  header,
+  aliases: ['name', ...aliases],
+  required: true,
+  hint: 'Up to 150 characters.',
+});
+const statusCol: MasterImportColumn = {
+  field: 'status',
+  header: 'Status',
+  aliases: ['active'],
+  required: false,
+  hint: 'Active or Inactive. Empty: new rows become Active, existing rows keep their status.',
+};
+
+/** Spreadsheet layout per master-data list (template columns and accepted headers). */
+export const MASTER_IMPORT_COLUMNS: Record<MasterDataEntity, MasterImportColumn[]> = {
+  wings: [codeCol('Wing Code', 'wing'), nameCol('Wing Name'), statusCol],
+  lines: [codeCol('Line Code', 'line'), nameCol('Line Name'), statusCol],
+  branches: [codeCol('Branch Code', 'branch'), nameCol('Branch Name'), statusCol],
+  banks: [codeCol('Bank Code'), nameCol('Bank Name', 'bank'), statusCol],
+  accounts: [
+    codeCol('Account Code', 'account no', 'account number'),
+    nameCol('Account Name', 'account'),
+    { field: 'bankCode', header: 'Bank Code', aliases: ['bank'], required: true, hint: 'Code of an existing bank (Master Data → Banks).' },
+    statusCol,
+  ],
+  parties: [
+    codeCol('CV Code', 'cv', 'cv no', 'farmer code', 'customer code'),
+    nameCol('Farmer / Customer Name', 'farmer name', 'customer name', 'farmer', 'customer'),
+    statusCol,
+  ],
+  'sales-types': [
+    codeCol('Sales Type Code'),
+    nameCol('Sales Type Name', 'sales type'),
+    { field: 'isSpecial', header: 'Special', aliases: ['is special', 'special transaction'], required: false, hint: 'Yes or No (used by routing rules). Empty: No for new rows, unchanged for existing rows.' },
+    statusCol,
+  ],
+};
+
+export const masterImportQuerySchema = z.object({
+  /** true (default) = only check the file and report what would change. */
+  dryRun: booleanStringSchema.default('true'),
+});
+
+export const masterTemplateQuerySchema = z.object({
+  /** true = include every existing record (edit in Excel and import back). */
+  withData: booleanStringSchema.default('false'),
+});
 
 export const masterDataListQuerySchema = paginationQuerySchema.extend({
   q: z.string().trim().max(100).optional(),
